@@ -1,0 +1,25 @@
+# Core
+torch>=2.0
+torchvision>=0.15
+compressai>=1.2.4          # replaces the paper's hand-crafted "virtual codec"
+numpy>=1.23
+scipy>=1.9                 # BD-Rate polynomial integration
+
+# Video IO / data
+opencv-python>=4.7
+av>=10.0                   # torchvision.io backend (pyav)
+
+# Config / utils
+pyyaml>=6.0
+tqdm>=4.65
+matplotlib>=3.6            # rate-accuracy plots
+pandas>=1.5               # results tables / CSV
+
+# NOTE: ffmpeg (with libx264 + libx265) must be available on the system PATH
+#       for the real-codec anchors. It is preinstalled on Kaggle.
+#
+# Optional (object tracking):
+#   The GOT-10k reader here is self-contained (no extra package needed).
+#   For the paper's exact trackers (KYS/DiMP/ATOM/PrDiMP) install pytracking
+#   separately -- see scripts/install_pytracking.sh. It is intentionally NOT
+#   pinned here because it is heavy and torch/CUDA-version sensitive.

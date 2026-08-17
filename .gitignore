@@ -1,0 +1,24 @@
+# Byte-compiled / caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# Data & artifacts (never commit the dataset or big outputs)
+data/raw/
+data/index/*.json
+outputs/
+checkpoints/
+*.pth
+*.tar
+*.mp4
+*.avi
+*.mkv
+*.png
+!docs/**/*.png
+results/
+*.log
+
+# Scratch
+_paper_text.txt
+.DS_Store
