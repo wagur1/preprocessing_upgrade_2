@@ -96,12 +96,39 @@ def _qp_norm(qp: float, cfg: dict) -> float:
     return min(max((float(qp) - lo) / (hi - lo), 0.0), 1.0)
 
 
-def _quality_level(quality: int, codec: CompressAICodec) -> float:
-    """Normalised compression level in [0, 1] for a CompressAI quality index
-    (higher quality index = higher rate = *less* compression -> lower level)."""
-    quals = sorted(codec.qualities)
-    span = max(quals[-1] - quals[0], 1)
-    return 1.0 - (quality - quals[0]) / span
+def _quality_conds(cfg: dict, codec: CompressAICodec) -> Dict[int, float]:
+    """FiLM condition per CompressAI quality, matching what TRAINING used.
+
+    Training samples a QP and feeds ``cond = qp_norm(qp)`` while running the proxy
+    at ``q = qp_to_quality[qp]``. Eval must feed the *same* condition per quality,
+    so we invert that map: quality -> mean training QP -> qp_norm. Qualities never
+    seen in training (e.g. a higher-rate quality) are extrapolated linearly on the
+    (quality, mean-QP) training points, then qp_norm-clamped to [0,1].
+
+    (The old eval used a separate ``_quality_level`` normalisation, so quality 5
+    was trained at cond 0.065 but evaluated at 0.429 -- a train/eval mismatch that
+    made ``prep+compressai`` not actually in-domain.)"""
+    from collections import defaultdict
+
+    qtq = {int(qp): int(q) for qp, q in cfg["train"]["qp_to_quality"].items()}
+    by_q: Dict[int, list] = defaultdict(list)
+    for qp, q in qtq.items():
+        by_q[q].append(qp)
+    q2qp = {q: sum(v) / len(v) for q, v in by_q.items()}   # mean training QP per quality
+
+    qs = sorted(q2qp)
+    if len(qs) >= 2:  # least-squares line qp ~ a*quality + b for extrapolation
+        n, sx = len(qs), sum(qs)
+        sy = sum(q2qp[q] for q in qs)
+        sxx = sum(q * q for q in qs)
+        sxy = sum(q * q2qp[q] for q in qs)
+        denom = (n * sxx - sx * sx) or 1.0
+        a = (n * sxy - sx * sy) / denom
+        b = (sy - a * sx) / n
+    else:
+        a, b = 0.0, (next(iter(q2qp.values())) if q2qp else 30.0)
+
+    return {q: _qp_norm(q2qp.get(q, a * q + b), cfg) for q in codec.qualities}
 
 
 def _rate_cond(level: float, batch: int, device, dtype) -> torch.Tensor:
@@ -428,6 +455,7 @@ def _evaluate_classification(cfg, pre, codec, analyzer, out_dir) -> dict:
 
     store: dict = {}
     qmid = codec.qualities[len(codec.qualities) // 2]
+    qconds = _quality_conds(cfg, codec)  # per-quality FiLM cond matching training
     saved_vis = False
     for clips, labels in tqdm(loader, desc="eval"):
         clips = clips.to(device)
@@ -435,7 +463,7 @@ def _evaluate_classification(cfg, pre, codec, analyzer, out_dir) -> dict:
         # Rate-conditioned: the preprocessor output depends on the operating
         # point, so it is recomputed per rate point (cannot preprocess once).
         for q in codec.qualities:
-            cond = _rate_cond(_quality_level(q, codec), clips.shape[0], clips.device, clips.dtype)
+            cond = _rate_cond(qconds[q], clips.shape[0], clips.device, clips.dtype)
             with torch.no_grad():
                 x_pre = pre(clips, cond)
             xh, bpp = codec.compress_decompress(x_pre, q)
@@ -554,12 +582,13 @@ def _evaluate_tracking(cfg, pre, codec, analyzer, out_dir) -> dict:
 
     seqs = list(iter_sequences(cfg["data"]["index"], "val", fs, max_frames, max_seqs))
     store: dict = {}
+    qconds = _quality_conds(cfg, codec)  # per-quality FiLM cond matching training
     for name, clip, gt, valid in tqdm(seqs, desc="eval-track"):
         clip = clip.to(device)
         init = gt[0]
         # Rate-conditioned: preprocess per operating point (output depends on it).
         for q in codec.qualities:
-            cond = _rate_cond(_quality_level(q, codec), clip.shape[0], clip.device, clip.dtype)
+            cond = _rate_cond(qconds[q], clip.shape[0], clip.device, clip.dtype)
             xh, bpp = _codec_chunked(pre, codec, clip, q, chunk, use_pre=True, cond=cond)
             _acc_track(store, "prep+compressai", q, bpp, track(xh, init), gt, valid)
             xh0, bpp0 = _codec_chunked(pre, codec, clip, q, chunk, use_pre=False)
