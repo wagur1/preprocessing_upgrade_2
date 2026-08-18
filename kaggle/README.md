@@ -77,6 +77,9 @@ for a, v in res['bd_vs_anchor'].items():
 | `--lam-task` | task-accuracy weight (`loss.lam_task`) | `1.0` | `1.0` / `0.5` |
 | `--omega` | feature-distillation weight (`loss.omega`) | `0.5` | `0.5` |
 | `--tau` | temporal-consistency weight (`loss.tau`) | `0.1` | `0.1` |
+| `--delta` | edit-magnitude L1 `|x_pre-x|` (`loss.delta`) — curb bit-adding edits | `0` | `0`–`0.05` |
+| `--res-scale` | residual amplitude (`model.res_scale`) — `<1` shrinks edits | `1.0` | `0.5`–`1.0` |
+| `--seed` | data subset/split + train seed — vary for multi-seed CI | `0` | `0,1,2` |
 
 ## Optional: the paper's exact trackers
 

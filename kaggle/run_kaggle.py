@@ -40,6 +40,25 @@ from src.engine import evaluate, train  # noqa: E402
 _VIDEO_EXTS = (".mp4", ".avi", ".mkv", ".mov", ".webm")
 
 
+def _seed_everything(seed: int) -> None:
+    """Seed python/torch RNGs so a --seed change gives an independent run (CI)."""
+    import random as _r
+
+    _r.seed(seed)
+    try:
+        import numpy as _np
+        _np.random.seed(seed)
+    except Exception:
+        pass
+    try:
+        import torch as _t
+        _t.manual_seed(seed)
+        if _t.cuda.is_available():
+            _t.cuda.manual_seed_all(seed)
+    except Exception:
+        pass
+
+
 # --------------------------------------------------------------------------
 # dataset autodetection
 # --------------------------------------------------------------------------
@@ -138,8 +157,11 @@ def main() -> None:
     p.add_argument("--skip-prepare", action="store_true")
     p.add_argument("--skip-train", action="store_true")
     p.add_argument("--ckpt", default=None, help="checkpoint for eval if skipping train")
+    p.add_argument("--seed", type=int, default=0,
+                   help="seed for data subset/split + training (vary it for multi-seed CI)")
     args = p.parse_args()
 
+    _seed_everything(args.seed)
     cfg = load_config(args.config)
     task = cfg["task"]["name"]
     is_tracking = task == "tracking"
@@ -157,13 +179,14 @@ def main() -> None:
         if is_tracking:
             from src.data.prepare_got10k import build_index as build_got10k_index
             root = _autodetect_got10k(args.dataset_dir)
-            build_got10k_index(root=root, out=index, cap_gb=args.cap_gb, val_frac=val_frac)
+            build_got10k_index(root=root, out=index, cap_gb=args.cap_gb,
+                               val_frac=val_frac, seed=args.seed)
         else:
             from src.data.prepare_3gb import build_index as build_kinetics_index
             root = _autodetect_kinetics(args.dataset_dir)
             build_kinetics_index(
                 root=root, out=index, cap_gb=args.cap_gb, val_frac=val_frac,
-                backbone=cfg["task"].get("backbone", "r3d_18"),
+                backbone=cfg["task"].get("backbone", "r3d_18"), seed=args.seed,
             )
 
     # config overrides for a Kaggle-sized run
