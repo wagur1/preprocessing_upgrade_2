@@ -17,6 +17,10 @@ distillation term and let a real rate weight bite.
   * ``L_temp``   : temporal consistency -- match the *inter-frame change* of the
                    reconstruction to that of the source. Preserves motion / kills
                    flicker without pinning absolute pixels (the video novelty).
+  * ``L_delta``  : (optional, off by default) L1 magnitude of the preprocessor's
+                   pixel edit ``|x_pre - x|``. A direct edit-sparsity lever when
+                   the rate term alone won't stop the edit adding bits. NOT
+                   MSE-to-source: it constrains the *input* edit, not x_hat.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ class LossWeights:
     omega: float = 0.5   # feature distillation (Yang et al. use 0.5)
     beta: float = 0.1    # rate; raise until bpp actually bites
     tau: float = 0.1     # temporal consistency
+    delta: float = 0.0   # L1 edit-magnitude |x_pre-x| (edit sparsity; 0 = off)
 
 
 def feature_distillation(analyzer, x_source: torch.Tensor, x_hat: torch.Tensor) -> torch.Tensor:
@@ -68,15 +73,25 @@ def preprocessing_loss(
     bpp: torch.Tensor,
     target: Any,
     w: LossWeights,
+    x_pre: torch.Tensor | None = None,
 ) -> Dict[str, torch.Tensor]:
     l_task, _ = analyzer.accuracy_loss(x_hat, target)
     l_dist = feature_distillation(analyzer, x_source, x_hat)
     l_temp = temporal_consistency(x_source, x_hat)
     total = w.lam_task * l_task + w.omega * l_dist + w.beta * bpp + w.tau * l_temp
+    # Edit-magnitude penalty on the *preprocessor output* (not the reconstruction):
+    # pushes small/sparse pixel edits so the codec has less added detail to encode.
+    # Distinct from MSE-to-source (which pins x_hat and fights compression).
+    if w.delta and x_pre is not None:
+        l_delta = (x_pre - x_source).abs().mean()
+        total = total + w.delta * l_delta
+    else:
+        l_delta = x_hat.new_zeros(())
     return {
         "loss": total,
         "loss_task": l_task.detach(),
         "loss_dist": l_dist.detach(),
         "loss_rate": (bpp.detach() if torch.is_tensor(bpp) else torch.as_tensor(bpp)),
         "loss_temp": l_temp.detach(),
+        "loss_delta": l_delta.detach(),
     }

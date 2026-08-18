@@ -25,11 +25,12 @@ data:
   frame_size: 128         # compression resolution (multiple of 64)
   temporal_stride: 2
 
-loss:                     # L = lam_task*L_task + omega*L_distill + beta*bpp + tau*L_temp
+loss:                     # L = lam_task*L_task + omega*L_distill + beta*bpp + tau*L_temp + delta*|x_pre-x|
   lam_task: 1.0           # task accuracy (cross-entropy)
   omega: 0.5              # frozen-analyzer feature distillation (Yang et al. 0.5)
   beta: 0.1               # rate (bpp); raise until compression actually bites
   tau: 0.1                # temporal consistency (preserve inter-frame motion)
+  delta: 0.0              # L1 edit-magnitude |x_pre-x| (edit sparsity; 0 = off, raise to curb bit-adding edits)
 
 train:
   epochs: 5

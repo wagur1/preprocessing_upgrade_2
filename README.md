@@ -110,8 +110,14 @@ L = λ_task · L_task  +  ω · L_distill  +  β · L_R  +  τ · L_temp
 - `L_R`      — bpp ước lượng từ entropy model. β đặt đủ lớn để **nén thực sự cắn** (lỗi chí mạng của baseline).
 - `L_temp`   — `MSE( (x̂_t−x̂_{t−1}), (x_t−x_{t−1}) )`: khớp **biến thiên liên khung**, giữ chuyển động &
   chống flicker mà **không** ghim pixel tuyệt đối (nên không chống nén như MSE-to-source).
+- `L_delta`  — (tuỳ chọn, mặc định tắt) `mean|x_pre − x|` (L1): **phạt biên độ chỉnh sửa của preprocessor**.
+  Đòn bẩy *trực tiếp* khi `β` (bpp, gián tiếp qua entropy model) chưa đủ ngăn model thêm chi tiết → thêm bit.
+  **Khác MSE-to-source**: phạt *đầu vào codec* (x_pre) chứ không ghim *x̂*, nên đẩy về chỉnh sửa thưa/ít bit
+  thay vì bám pixel gốc. L1 ⇒ chỉnh mạnh vài vùng (đối tượng chuyển động) và nhả nền.
 
-Mặc định `λ_task=1, ω=0.5, β=0.1, τ=0.1` (ω theo Yang et al.). **Không có** số hạng MSE-to-source.
+Mặc định `λ_task=1, ω=0.5, β=0.1, τ=0.1, delta=0` (ω theo Yang et al.). **Không có** số hạng MSE-to-source.
+Hai đòn bẩy chống "thêm bit": `--res-scale <1` (co biên độ residual toàn cục, cứng) và `--delta >0`
+(phạt L1 mềm, để model tự giữ chỗ chỉnh đáng tiền).
 
 ## Config mới (`configs/*.yaml`)
 
@@ -126,6 +132,7 @@ loss:
   omega: 0.5               # feature distillation
   beta: 0.1                # rate — chỉnh cái này để nén cắn
   tau: 0.1                 # temporal consistency
+  delta: 0.0               # L1 |x_pre−x| — phạt biên độ chỉnh sửa (0=tắt), bật khi β chưa đủ ngăn thêm bit
 train:
   qp_list: [22,27,32,37,42]
   qp_to_quality: {22:5, 27:3, 32:2, 37:1, 42:1}   # đơn điệu: QP↑ ↔ quality↓
@@ -175,7 +182,15 @@ for beta, lam in [(0.1, 1.0), (0.5, 1.0), (1.0, 0.5)]:
         --cap-gb 3 --epochs 8 --beta {beta} --lam-task {lam} --out-dir outputs/b{beta}_l{lam}
 ```
 Âm ở in-domain → mô hình có cửa nén, đầu tư tiếp (mask học từ analyzer, motion-comp temporal loss).
-Vẫn dương dù β mạnh → phải đổi cấu trúc/điểm bán.
+Vẫn dương dù β mạnh → chỉnh **biên độ edit** trực tiếp: `--res-scale 0.5` (co residual) và/hoặc
+`--delta 0.02` (phạt L1 `|x_pre−x|`). Ví dụ ép edit ít-mà-đúng-chỗ:
+
+```python
+!python kaggle/run_kaggle.py --config configs/action_recognition.yaml \
+    --cap-gb 3 --epochs 12 --beta 1.0 --lam-task 0.5 --delta 0.02 --res-scale 0.5 \
+    --out-dir outputs/b1_l0.5_d0.02_r0.5
+```
+Vẫn dương → phải đổi cấu trúc/điểm bán.
 
 Dataset AR: [`rohanmallick/kinetics-train-5per`](https://www.kaggle.com/datasets/rohanmallick/kinetics-train-5per).
 `--cap-gb` nới lên khi cần đường cong/CI chắc hơn.

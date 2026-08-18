@@ -174,7 +174,7 @@ def _val_loss(pre, codec, analyzer, loader, weights, qp_list, qp_to_quality,
         cond = _rate_cond(_qp_norm(qp, cfg), clips.shape[0], clips.device, clips.dtype)
         x_pre = pre(clips, cond)
         x_hat, bpp = codec(x_pre, q)
-        parts = preprocessing_loss(analyzer, clips, x_hat, bpp, target, weights)
+        parts = preprocessing_loss(analyzer, clips, x_hat, bpp, target, weights, x_pre=x_pre)
         total += parts["loss"].item()
         nb += 1
     if was_training:
@@ -200,6 +200,7 @@ def _fit(cfg, pre, codec, analyzer, train_loader, val_loader, prep_batch,
         omega=lw.get("omega", 0.5),
         beta=lw.get("beta", 0.1),
         tau=lw.get("tau", 0.1),
+        delta=lw.get("delta", 0.0),
     )
     opt = _optimizer(pre, tr)
     epochs = int(tr.get("epochs", 5))
@@ -255,7 +256,7 @@ def _fit(cfg, pre, codec, analyzer, train_loader, val_loader, prep_batch,
             cond = _rate_cond(_qp_norm(qp, cfg), clips.shape[0], clips.device, clips.dtype)
             x_pre = pre(clips, cond)
             x_hat, bpp = codec(x_pre, q)
-            parts = preprocessing_loss(analyzer, clips, x_hat, bpp, target, weights)
+            parts = preprocessing_loss(analyzer, clips, x_hat, bpp, target, weights, x_pre=x_pre)
             opt.zero_grad(set_to_none=True)
             parts["loss"].backward()
             opt.step()
@@ -267,6 +268,7 @@ def _fit(cfg, pre, codec, analyzer, train_loader, val_loader, prep_batch,
                              dist=f"{parts['loss_dist'].item():.3f}",
                              bpp=f"{parts['loss_rate'].item():.3f}",
                              tmp=f"{parts['loss_temp'].item():.4f}",
+                             dlt=f"{parts['loss_delta'].item():.4f}",
                              lr=f"{opt.param_groups[0]['lr']:.1e}", qp=qp)
             if max_steps and step >= max_steps:
                 stop = True

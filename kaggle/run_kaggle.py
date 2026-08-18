@@ -123,6 +123,10 @@ def main() -> None:
                    help="feature-distillation weight (loss.omega)")
     p.add_argument("--tau", type=float, default=None,
                    help="temporal-consistency weight (loss.tau)")
+    p.add_argument("--delta", type=float, default=None,
+                   help="edit-magnitude weight (loss.delta); L1 |x_pre-x|, direct edit-sparsity lever")
+    p.add_argument("--res-scale", type=float, default=None,
+                   help="scale on the learned residual (model.res_scale); <1 shrinks edit amplitude")
     p.add_argument("--frame-size", type=int, default=None)
     p.add_argument("--max-seqs", type=int, default=None, help="tracking eval: cap val seqs")
     p.add_argument("--max-frames", type=int, default=None, help="tracking eval: cap frames/seq")
@@ -189,6 +193,10 @@ def main() -> None:
         loss_cfg["omega"] = args.omega
     if args.tau is not None:
         loss_cfg["tau"] = args.tau
+    if args.delta is not None:
+        loss_cfg["delta"] = args.delta
+    if args.res_scale is not None:
+        cfg["model"]["res_scale"] = args.res_scale
 
     # 2) train
     ckpt = args.ckpt

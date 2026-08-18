@@ -57,6 +57,17 @@ def main() -> None:
     expect = (w.omega * feature_distillation(a, src, other)
               + w.beta * bpp + w.tau * temporal_consistency(src, other))
     assert torch.allclose(parts["loss"], expect, atol=1e-5)
+
+    # delta term: 0 unless weighted AND x_pre given; then adds w.delta*|x_pre-x|.
+    assert parts["loss_delta"].item() == 0.0
+    wd = LossWeights(lam_task=1.0, omega=0.5, beta=0.1, tau=0.1, delta=2.0)
+    x_pre = src + 0.25                       # constant 0.25 edit everywhere
+    pd = preprocessing_loss(a, src, other, bpp, target=other, w=wd, x_pre=x_pre)
+    assert abs(pd["loss_delta"].item() - 0.25) < 1e-6
+    assert torch.allclose(pd["loss"], expect + wd.delta * 0.25, atol=1e-5)
+    # delta weight 0 -> ignored even if x_pre passed.
+    p0 = preprocessing_loss(a, src, other, bpp, target=other, w=w, x_pre=x_pre)
+    assert p0["loss_delta"].item() == 0.0
     print("loss self-check passed")
 
 
