@@ -31,6 +31,7 @@ loss:                     # L = lam_task*L_task + omega*L_distill + beta*bpp + t
   beta: 0.1               # rate (bpp); raise until compression actually bites
   tau: 0.1                # temporal consistency (preserve inter-frame motion)
   delta: 0.0              # L1 edit-magnitude |x_pre-x| (edit sparsity; 0 = off, raise to curb bit-adding edits)
+  gamma: 0.0              # TV of x_pre (codec-agnostic bit cost; 0 = off, raise to help x264/x265 transfer)
 
 train:
   epochs: 5

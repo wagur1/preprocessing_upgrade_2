@@ -21,6 +21,13 @@ distillation term and let a real rate weight bite.
                    pixel edit ``|x_pre - x|``. A direct edit-sparsity lever when
                    the rate term alone won't stop the edit adding bits. NOT
                    MSE-to-source: it constrains the *input* edit, not x_hat.
+  * ``L_tv``     : (optional, off by default) total variation of the preprocessor
+                   output ``x_pre``. A *codec-agnostic* bit-cost proxy: every real
+                   codec (DCT/wavelet/block) spends bits on spatial high-frequency
+                   energy, so penalising TV pushes cheap-to-encode-on-ANY-codec
+                   frames -- the lever for transfer to x264/x265 (unlike beta*bpp,
+                   which only reduces the *proxy* codec's bits). L_task keeps the
+                   edges the machine actually needs.
 """
 
 from __future__ import annotations
@@ -39,6 +46,18 @@ class LossWeights:
     beta: float = 0.1    # rate; raise until bpp actually bites
     tau: float = 0.1     # temporal consistency
     delta: float = 0.0   # L1 edit-magnitude |x_pre-x| (edit sparsity; 0 = off)
+    gamma: float = 0.0   # total-variation of x_pre (codec-agnostic bit cost; 0 = off)
+
+
+def total_variation(x: torch.Tensor) -> torch.Tensor:
+    """Mean spatial total variation of x (last two dims are H, W).
+
+    Codec-agnostic proxy for encode cost: sum of |neighbour pixel differences|.
+    Works for 4D (B,C,H,W) and 5D (B,C,T,H,W) tensors alike."""
+    dh = (x[..., 1:, :] - x[..., :-1, :]).abs().mean()
+    dw = (x[..., :, 1:] - x[..., :, :-1]).abs().mean()
+    return dh + dw
+
 
 
 def feature_distillation(analyzer, x_source: torch.Tensor, x_hat: torch.Tensor) -> torch.Tensor:
@@ -87,6 +106,14 @@ def preprocessing_loss(
         total = total + w.delta * l_delta
     else:
         l_delta = x_hat.new_zeros(())
+    # Codec-agnostic bit-cost: penalise spatial high-frequency energy of the
+    # output so edits are cheap on ANY codec (targets x264/x265 transfer, which
+    # beta*bpp -- the proxy codec's own rate -- does not reach).
+    if w.gamma and x_pre is not None:
+        l_tv = total_variation(x_pre)
+        total = total + w.gamma * l_tv
+    else:
+        l_tv = x_hat.new_zeros(())
     return {
         "loss": total,
         "loss_task": l_task.detach(),
@@ -94,4 +121,5 @@ def preprocessing_loss(
         "loss_rate": (bpp.detach() if torch.is_tensor(bpp) else torch.as_tensor(bpp)),
         "loss_temp": l_temp.detach(),
         "loss_delta": l_delta.detach(),
+        "loss_tv": l_tv.detach(),
     }

@@ -14,6 +14,7 @@ from src.losses import (
     feature_distillation,
     preprocessing_loss,
     temporal_consistency,
+    total_variation,
 )
 
 
@@ -68,6 +69,17 @@ def main() -> None:
     # delta weight 0 -> ignored even if x_pre passed.
     p0 = preprocessing_loss(a, src, other, bpp, target=other, w=w, x_pre=x_pre)
     assert p0["loss_delta"].item() == 0.0
+
+    # tv term: 0 for a constant frame, positive for a varying one.
+    assert total_variation(torch.ones(2, 3, 4, 8, 8)).item() == 0.0
+    assert total_variation(other).item() > 0
+    # gamma wiring: 0 unless weighted AND x_pre given; then adds w.gamma*TV(x_pre).
+    assert parts["loss_tv"].item() == 0.0
+    wg = LossWeights(lam_task=1.0, omega=0.5, beta=0.1, tau=0.1, gamma=3.0)
+    pg = preprocessing_loss(a, src, other, bpp, target=other, w=wg, x_pre=other)
+    tv = total_variation(other)
+    assert abs(pg["loss_tv"].item() - tv.item()) < 1e-6
+    assert torch.allclose(pg["loss"], expect + wg.gamma * tv, atol=1e-5)
     print("loss self-check passed")
 
 

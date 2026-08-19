@@ -144,6 +144,8 @@ def main() -> None:
                    help="temporal-consistency weight (loss.tau)")
     p.add_argument("--delta", type=float, default=None,
                    help="edit-magnitude weight (loss.delta); L1 |x_pre-x|, direct edit-sparsity lever")
+    p.add_argument("--gamma", type=float, default=None,
+                   help="TV weight (loss.gamma); codec-agnostic bit cost on x_pre, targets x264/x265 transfer")
     p.add_argument("--res-scale", type=float, default=None,
                    help="scale on the learned residual (model.res_scale); <1 shrinks edit amplitude")
     p.add_argument("--frame-size", type=int, default=None)
@@ -218,6 +220,8 @@ def main() -> None:
         loss_cfg["tau"] = args.tau
     if args.delta is not None:
         loss_cfg["delta"] = args.delta
+    if args.gamma is not None:
+        loss_cfg["gamma"] = args.gamma
     if args.res_scale is not None:
         cfg["model"]["res_scale"] = args.res_scale
 

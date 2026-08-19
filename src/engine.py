@@ -228,6 +228,7 @@ def _fit(cfg, pre, codec, analyzer, train_loader, val_loader, prep_batch,
         beta=lw.get("beta", 0.1),
         tau=lw.get("tau", 0.1),
         delta=lw.get("delta", 0.0),
+        gamma=lw.get("gamma", 0.0),
     )
     opt = _optimizer(pre, tr)
     epochs = int(tr.get("epochs", 5))
@@ -296,6 +297,7 @@ def _fit(cfg, pre, codec, analyzer, train_loader, val_loader, prep_batch,
                              bpp=f"{parts['loss_rate'].item():.3f}",
                              tmp=f"{parts['loss_temp'].item():.4f}",
                              dlt=f"{parts['loss_delta'].item():.4f}",
+                             tv=f"{parts['loss_tv'].item():.4f}",
                              lr=f"{opt.param_groups[0]['lr']:.1e}", qp=qp)
             if max_steps and step >= max_steps:
                 stop = True
