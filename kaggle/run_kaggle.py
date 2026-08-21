@@ -161,6 +161,8 @@ def main() -> None:
     p.add_argument("--ckpt", default=None, help="checkpoint for eval if skipping train")
     p.add_argument("--seed", type=int, default=0,
                    help="seed for data subset/split + training (vary it for multi-seed CI)")
+    p.add_argument("--set", dest="overrides", action="append", default=[], metavar="k=v",
+                   help="extra dotted config overrides, e.g. --set codec.kind=virtual --set loss.mu=10")
     args = p.parse_args()
 
     _seed_everything(args.seed)
@@ -205,6 +207,7 @@ def main() -> None:
         ov.append(f"eval.max_seqs={args.max_seqs}")
     if args.max_frames is not None:
         ov.append(f"eval.max_frames={args.max_frames}")
+    ov += args.overrides   # arbitrary --set k=v (codec.kind, loss.mu, ...)
     apply_overrides(cfg, ov)
     cfg["train"]["resume"] = bool(args.resume)
     if args.patience is not None:
