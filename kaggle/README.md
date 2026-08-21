@@ -57,8 +57,9 @@ from IPython.display import Image, display
 display(Image('outputs/eval/rate_accuracy.png'))
 res = json.load(open('outputs/eval/results.json'))
 print("task:", res['task'], "| metric:", res['metric'])
-for a, v in res['bd_vs_anchor'].items():
-    print(f"vs {a}: BD-Rate {v['bd_rate_pct']:+.2f}%")
+# the real claim: same-codec preprocessor gain (negative = bit savings)
+for pair, v in res['bd_prep_gain'].items():
+    print(f"{pair}: BD-Rate {v['bd_rate_pct']:+.2f}% | BD-Acc {v['bd_accuracy']:+.4f}")
 ```
 
 ## Knobs
@@ -81,6 +82,24 @@ for a, v in res['bd_vs_anchor'].items():
 | `--gamma` | TV of `x_pre` (`loss.gamma`) — codec-agnostic bit cost, helps x264/x265 transfer | `0` | `0`–`0.05` |
 | `--res-scale` | residual amplitude (`model.res_scale`) — `<1` shrinks edits | `1.0` | `0.5`–`1.0` |
 | `--seed` | data subset/split + train seed — vary for multi-seed CI | `0` | `0,1,2` |
+| `--set k=v` | override ANY dotted config key (repeatable), e.g. `codec.kind`, `loss.mu` | — | see preset below |
+
+## Paper preset (virtual codec + L_D)
+
+Reproduce Zhao et al.'s recipe: the block-DCT virtual codec (matches x264/x265
+geometry) with the MSE-to-source term restored, via `--set`:
+
+```python
+!python kaggle/run_kaggle.py --epochs 3 --max-steps 300 --seed 0 \
+    --set codec.kind=virtual --set loss.mu=10 --set loss.beta=0.01 --set loss.gamma=0.0 \
+    --out-dir outputs/paper_s0
+!python kaggle/report_ci.py outputs/paper_s0        # same-codec BD-Rate prep gain
+```
+
+`codec.kind=virtual` swaps CompressAI for the block-transform proxy; `loss.mu=10`
++ light `loss.beta=0.01` matches the paper's α=10, α·λ=0.01. Calibrate the rate
+range with `--set codec.step_fine=… --set codec.step_coarse=…` if the virtual
+curve misses the x264/x265 bpp band.
 
 ## Optional: the paper's exact trackers
 
