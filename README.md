@@ -60,6 +60,12 @@ x [B,C,T,H,W] ─┬─▶ motion cue = |x_t − x_{t−1}|  (chuẩn hoá/clip)
 Codec proxy (`src/models/codec.py`) = CompressAI `bmshj2018-factorized` (entropy bottleneck factorized-prior
 của Ballé et al. 2017 — đúng mô hình rate paper cite), khả vi khi train, range-coder thật khi eval.
 
+**Virtual codec khớp block-DCT** (`src/models/virtual_codec.py`, chọn bằng `codec.kind: virtual`) — dựng
+lại proxy của Zhao et al.: P-frame predict → **block DCT 8×8** → lượng tử scalar → iDCT, rate factorized
+per-tần-số (không tham số, nên codec vẫn đóng băng). Lý do: transform kiểu-wavelet của CompressAI **lệch
+hình học block-DCT** của x264/x265 → là nghi phạm số 1 khiến edit train qua CompressAI **không transfer**
+sang codec thật. `bmshj2018-factorized` vẫn là mặc định; `virtual` là nhánh tái lập paper.
+
 ## Pipeline
 
 ### Train (chỉ preprocessor học)
@@ -101,7 +107,7 @@ Output: `results.json`, `curves.csv`, `rate_accuracy.png`, `qualitative.png`.
 ## Hàm loss (`src/losses.py`)
 
 ```
-L = λ_task · L_task  +  ω · L_distill  +  β · L_R  +  τ · L_temp
+L = λ_task · L_task  +  ω · L_distill  +  β · L_R  +  τ · L_temp   (+ μ · L_D)
 ```
 - `L_task`   — cross-entropy (recognition) / SiamFC balanced-logistic (tracking) của analyzer trên **x̂**.
 - `L_distill`— MSE (chuẩn hoá theo scale) giữa đặc trưng trung gian của analyzer trên **source** và **x̂**;
@@ -114,6 +120,10 @@ L = λ_task · L_task  +  ω · L_distill  +  β · L_R  +  τ · L_temp
   Đòn bẩy *trực tiếp* khi `β` (bpp, gián tiếp qua entropy model) chưa đủ ngăn model thêm chi tiết → thêm bit.
   **Khác MSE-to-source**: phạt *đầu vào codec* (x_pre) chứ không ghim *x̂*, nên đẩy về chỉnh sửa thưa/ít bit
   thay vì bám pixel gốc. L1 ⇒ chỉnh mạnh vài vùng (đối tượng chuyển động) và nhả nền.
+- `L_D`      — (tuỳ chọn, mặc định tắt) `MSE(x̂, source)` — **distortion term của Zhao et al.** Ban đầu bỏ hẳn
+  vì chống nén; nhưng đó là kết luận rút ra từ **proxy lệch codec** (CompressAI wavelet). Paper **giữ L_D nặng**
+  (α=10) + rate nhẹ và vẫn thắng trên codec block-DCT thật → bật `μ` **cùng** `codec.kind: virtual` (khi đó ghim
+  pixel là *cùng miền* x264/x265, không đánh nhau với proxy wavelet). Preset paper: `μ=10, β=0.01`.
 
 Mặc định `λ_task=1, ω=0.5, β=0.1, τ=0.1, delta=0` (ω theo Yang et al.). **Không có** số hạng MSE-to-source.
 Hai đòn bẩy chống "thêm bit": `--res-scale <1` (co biên độ residual toàn cục, cứng) và `--delta >0`
@@ -133,6 +143,12 @@ loss:
   beta: 0.1                # rate — chỉnh cái này để nén cắn
   tau: 0.1                 # temporal consistency
   delta: 0.0               # L1 |x_pre−x| — phạt biên độ chỉnh sửa (0=tắt), bật khi β chưa đủ ngăn thêm bit
+  gamma: 0.0               # TV(x_pre) — bit-cost codec-agnostic (0=tắt), nâng để hỗ trợ transfer x264/x265
+  mu: 0.0                  # MSE-to-source L_D (0=tắt). Preset paper (kèm codec.kind: virtual): mu=10, beta=0.01
+codec:
+  kind: compressai         # compressai | virtual (proxy block-DCT khớp x264/x265)
+  step_coarse: 0.25        # (virtual) bước lượng tử ở quality thấp nhất — núm calibrate bpp
+  step_fine: 0.03          # (virtual) bước lượng tử ở quality cao nhất
 train:
   qp_list: [22,27,32,37,42]
   qp_to_quality: {22:5, 27:3, 32:2, 37:1, 42:1}   # đơn điệu: QP↑ ↔ quality↓
@@ -170,6 +186,20 @@ Cần **GPU** + **Internet ON** (tải weights CompressAI/torchvision). Image Ka
 
 Không đủ 1 session ≤12h thì tách: session train (`preprocessor_last.pth` lưu ở Kaggle output) →
 session sau `--resume`, hoặc `--skip-train --ckpt outputs/checkpoints/preprocessor.pth` để eval.
+
+### Preset paper (virtual codec + L_D)
+
+`--set k=v` override bất kỳ khoá config nào (kể cả `codec.kind`, `loss.mu`):
+
+```python
+!python kaggle/run_kaggle.py --epochs 3 --max-steps 300 --seed 0 \
+    --set codec.kind=virtual --set loss.mu=10 --set loss.beta=0.01 --set loss.gamma=0.0 \
+    --out-dir outputs/paper_s0
+!python kaggle/report_ci.py outputs/paper_s0        # BD-Rate prep-gain cùng codec
+```
+
+Đổi `--seed 0→1→2` (+ `--out-dir`) rồi gộp cả ba để có 3-seed CI. Đường cong virtual lệch dải bpp của
+x264/x265 → chỉnh `--set codec.step_fine=… --set codec.step_coarse=…`.
 
 ### Sweep rate (GO/NO-GO)
 
@@ -218,11 +248,12 @@ python tests/test_earlystop.py            # điều kiện dừng patience/min_d
 src/
   models/preprocessor.py   U-Net + FiLM(rate) + SFT(motion cue) (trained)
   models/codec.py          CompressAI proxy (khả vi + range coder)
+  models/virtual_codec.py  proxy block-DCT khớp x264/x265 (codec.kind: virtual)
   codecs/standard.py       ffmpeg H.264/H.265 anchor
   tasks/                   r3d_18 (AR) + features(); SiamFC + pytracking adapter (tracking) + features()
   data/                    Kinetics + GOT-10k readers, index builders
   metrics/                 BD-Rate / top-k / tracking AUC
-  losses.py                L = λ_task·L_task + ω·L_distill + β·bpp + τ·L_temp (KHÔNG có MSE-to-source)
+  losses.py                L = λ_task·L_task + ω·L_distill + β·bpp + τ·L_temp (+ μ·L_D tuỳ chọn)
   engine.py                train/eval + rate-cond helpers + _fit (cosine, val, early-stop, resume)
 configs/                   action_recognition.yaml, tracking.yaml
 tests/                     test_preprocessor.py, test_losses.py, test_earlystop.py
@@ -235,7 +266,7 @@ Cơ chế mới dựa trên các công trình sau:
 
 1. **Zhao et al.**, *A Preprocessing Framework for Video Machine Vision under Compression*,
    arXiv:2512.15331 — base paper (khung preprocessing cho VCM; repo này là independent implementation,
-   virtual codec → CompressAI).
+   có cả nhánh CompressAI mặc định lẫn virtual codec block-DCT tái lập paper).
 2. **Yang, Ma, Wang, et al.**, *Task-Switchable Pre-Processor for Image Compression for Multiple Machine
    Vision Tasks*, **IEEE TCSVT 2024** — cơ sở quyết định: U-Net + task-attentive SFT/TSM + **feature
    distillation**, bỏ MSE-to-source, chuyển codec-agnostic sang codec chuẩn. **Hướng thiết kế chính.**
