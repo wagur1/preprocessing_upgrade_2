@@ -1,12 +1,20 @@
 """Training objective for the machine-vision video preprocessor (upgrade2).
 
     L = lam_task * L_task + omega * L_distill + beta * L_rate + tau * L_temp
+        (+ delta * L_delta) (+ gamma * L_tv) (+ mu * L_D)
 
-Deliberately **no MSE-to-source distortion term**. That term (the baseline's
-``L_D``) pins the reconstruction to the original pixels and directly fights
-compression, which is why the baseline never reached negative BD-Rate. Following
-Yang et al. (TCSVT 2024) we replace pixel fidelity with a *task-aligned* feature
-distillation term and let a real rate weight bite.
+By default there is **no MSE-to-source distortion term**. That term (the
+baseline's ``L_D``) pins the reconstruction to the original pixels; against a
+codec-*mismatched* proxy (our CompressAI wavelet transform) it fought
+compression, which is why that setup never reached negative BD-Rate. Following
+Yang et al. (TCSVT 2024) the default objective replaces pixel fidelity with a
+*task-aligned* feature distillation term and lets a real rate weight bite.
+
+Zhao et al. (arXiv:2512.15331), however, KEEP ``L_D`` heavily weighted (alpha=10)
+with a light rate weight and still win on real block-DCT codecs. So ``L_D`` is
+available as an optional ``mu`` term -- enable it together with the
+block-transform virtual codec (``codec.kind: virtual``), where pinning pixels is
+in the *same* domain as x264/x265 rather than fighting a wavelet proxy.
 
   * ``L_task``   : accuracy loss from the frozen analyzer on the reconstruction
                    (cross-entropy for recognition; SiamFC logistic for tracking).
@@ -28,6 +36,9 @@ distillation term and let a real rate weight bite.
                    frames -- the lever for transfer to x264/x265 (unlike beta*bpp,
                    which only reduces the *proxy* codec's bits). L_task keeps the
                    edges the machine actually needs.
+  * ``L_D``      : (optional, off by default) MSE between reconstruction and
+                   source ``||x_hat - x||^2``. Zhao et al.'s distortion term; use
+                   it with the block-transform virtual codec (mu ~ 10, light beta).
 """
 
 from __future__ import annotations
@@ -47,6 +58,7 @@ class LossWeights:
     tau: float = 0.1     # temporal consistency
     delta: float = 0.0   # L1 edit-magnitude |x_pre-x| (edit sparsity; 0 = off)
     gamma: float = 0.0   # total-variation of x_pre (codec-agnostic bit cost; 0 = off)
+    mu: float = 0.0      # MSE-to-source L_D (paper's distortion term; 0 = off)
 
 
 def total_variation(x: torch.Tensor) -> torch.Tensor:
@@ -114,6 +126,16 @@ def preprocessing_loss(
         total = total + w.gamma * l_tv
     else:
         l_tv = x_hat.new_zeros(())
+    # MSE-to-source L_D (Zhao et al.): pins the reconstruction to the source.
+    # We dropped it originally because it fought compression -- but that was
+    # against a mismatched (wavelet) proxy. The paper KEEPS it heavy (alpha=10)
+    # with a light rate weight and still wins on real block-DCT codecs, so it is
+    # available here; enable it together with the block-transform virtual codec.
+    if w.mu:
+        l_d = F.mse_loss(x_hat, x_source)
+        total = total + w.mu * l_d
+    else:
+        l_d = x_hat.new_zeros(())
     return {
         "loss": total,
         "loss_task": l_task.detach(),
@@ -122,4 +144,5 @@ def preprocessing_loss(
         "loss_temp": l_temp.detach(),
         "loss_delta": l_delta.detach(),
         "loss_tv": l_tv.detach(),
+        "loss_d": l_d.detach(),
     }
