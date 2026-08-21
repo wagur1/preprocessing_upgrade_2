@@ -45,7 +45,7 @@ from .data import (
 )
 from .losses import LossWeights, preprocessing_loss
 from .metrics import aggregate_metrics, bd_metric, bd_rate, sequence_metrics
-from .models import CompressAICodec, VideoPreprocessor
+from .models import CompressAICodec, VideoPreprocessor, VirtualCodec
 from .tasks import build_task
 
 
@@ -66,12 +66,24 @@ def _build_models(cfg: dict, device: torch.device):
         res_scale=m.get("res_scale", 1.0),
         cond_dim=m.get("cond_dim", 1),
     ).to(device)
-    codec = CompressAICodec(
-        model=cfg["codec"].get("model", "bmshj2018-factorized"),
-        qualities=tuple(cfg["codec"].get("qualities", [1, 2, 3, 4, 5, 6, 7, 8])),
-        pretrained=True,
-        trainable=False,
-    ).to(device)
+    cc = cfg["codec"]
+    if cc.get("kind", "compressai") == "virtual":
+        # block-transform proxy matched to x264/x265 geometry (Zhao et al.)
+        codec = VirtualCodec(
+            qualities=tuple(cc.get("qualities", [1, 2, 3, 5, 8])),
+            block=cc.get("block", 8),
+            q_steps=cc.get("q_steps"),
+            step_coarse=cc.get("step_coarse", 0.25),
+            step_fine=cc.get("step_fine", 0.03),
+            inter=cc.get("inter", True),
+        ).to(device)
+    else:
+        codec = CompressAICodec(
+            model=cc.get("model", "bmshj2018-factorized"),
+            qualities=tuple(cc.get("qualities", [1, 2, 3, 4, 5, 6, 7, 8])),
+            pretrained=True,
+            trainable=False,
+        ).to(device)
     analyzer = build_task(cfg).to(device)
     return pre, codec, analyzer
 

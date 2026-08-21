@@ -15,9 +15,17 @@ model:                    # rate- & motion-conditioned U-Net preprocessor
   cond_dim: 1             # rate-condition width (1 = normalised QP; FiLM input)
   qp_ref: [20, 51]        # QP range mapped to the [0,1] condition level
 
-codec:                    # CompressAI proxy (replaces the paper's virtual codec)
-  model: bmshj2018-factorized
+codec:                    # training-time differentiable proxy
+  kind: compressai        # compressai | virtual (block-DCT proxy matched to x264/x265)
+  model: bmshj2018-factorized   # (compressai kind only) CompressAI zoo model
   qualities: [1, 2, 3, 5, 8] # includes every quality used by qp_to_quality
+  # --- virtual-codec knobs (used only when kind: virtual) ---
+  block: 8                # DCT block size
+  inter: true             # P-frame prediction (previous source frame as reference)
+  step_coarse: 0.25       # quant step at the LOWEST quality id (coarsest, fewest bits)
+  step_fine: 0.03         # quant step at the HIGHEST quality id (finest, most bits)
+  # q_steps: {1: 0.25, 2: 0.16, 3: 0.10, 5: 0.05, 8: 0.03}  # explicit override
+
 
 data:
   index: data/index/kinetics_3gb.json
