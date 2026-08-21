@@ -130,11 +130,14 @@ class VirtualCodec(nn.Module):
             y_hat = y + torch.empty_like(y).uniform_(-0.5, 0.5)
         else:
             y_hat = torch.round(y)
-        # bits per coefficient ~ Gaussian differential entropy per frequency
-        # (+1/12 = uniform quantiser noise variance). Parameter-free, so the
-        # codec needs no training and stays frozen.
-        var = y.var(dim=(0, 2, 3), unbiased=False) + 1.0 / 12.0
-        bits = (0.5 * torch.log2(2 * math.pi * math.e * var)).clamp(min=0.0)
+        # bits/coeff = rate of a Gaussian source at SNR = signal power / quantiser
+        # noise power (uniform step noise, var 1/12): R = 0.5*log2(1 + 12*E[y^2]).
+        # Goes to 0 as a coarse step drives the signal below the quantiser -- no
+        # spurious floor. (The earlier differential-entropy form bottomed out at
+        # ~0.77 bpp, pinning the proxy ~20x above the x264/x265 operating range
+        # and training the preprocessor in a near-lossless regime.)
+        power = y.pow(2).mean(dim=(0, 2, 3))
+        bits = 0.5 * torch.log2(1.0 + 12.0 * power)
         per_ch = y.shape[0] * y.shape[2] * y.shape[3]
         return y_hat, (bits * per_ch).sum()
 

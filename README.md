@@ -147,8 +147,8 @@ loss:
   mu: 0.0                  # MSE-to-source L_D (0=tắt). Preset paper (kèm codec.kind: virtual): mu=10, beta=0.01
 codec:
   kind: compressai         # compressai | virtual (proxy block-DCT khớp x264/x265)
-  step_coarse: 0.25        # (virtual) bước lượng tử ở quality thấp nhất — núm calibrate bpp
-  step_fine: 0.03          # (virtual) bước lượng tử ở quality cao nhất
+  step_coarse: 3.0         # (virtual) bước lượng tử ở quality thấp nhất — núm calibrate bpp (~0.08 bpp)
+  step_fine: 1.0           # (virtual) bước lượng tử ở quality cao nhất (~0.4 bpp)
 train:
   qp_list: [22,27,32,37,42]
   qp_to_quality: {22:5, 27:3, 32:2, 37:1, 42:1}   # đơn điệu: QP↑ ↔ quality↓

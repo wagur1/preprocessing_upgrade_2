@@ -22,9 +22,9 @@ codec:                    # training-time differentiable proxy
   # --- virtual-codec knobs (used only when kind: virtual) ---
   block: 8                # DCT block size
   inter: true             # P-frame prediction (previous source frame as reference)
-  step_coarse: 0.25       # quant step at the LOWEST quality id (coarsest, fewest bits)
-  step_fine: 0.03         # quant step at the HIGHEST quality id (finest, most bits)
-  # q_steps: {1: 0.25, 2: 0.16, 3: 0.10, 5: 0.05, 8: 0.03}  # explicit override
+  step_coarse: 3.0        # quant step at the LOWEST quality id (coarsest, fewest bits) -> ~0.08 bpp
+  step_fine: 1.0          # quant step at the HIGHEST quality id (finest, most bits) -> ~0.4 bpp
+  # q_steps: {1: 3.0, 2: 2.2, 3: 1.8, 5: 1.3, 8: 1.0}  # explicit override (calibrated to x264/x265 bpp band)
 
 
 data:

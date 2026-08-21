@@ -27,8 +27,14 @@ model:
   qp_ref: [20, 51]        # QP range mapped to the [0,1] condition level
 
 codec:
+  kind: compressai        # compressai | virtual (block-DCT proxy matched to x264/x265)
   model: bmshj2018-factorized
   qualities: [1, 2, 3, 5, 8]
+  # --- virtual-codec knobs (used only when kind: virtual) ---
+  block: 8                # DCT block size
+  inter: true             # P-frame prediction (previous source frame as reference)
+  step_coarse: 3.0        # quant step at the LOWEST quality id (coarsest, fewest bits) -> ~0.08 bpp
+  step_fine: 1.0          # quant step at the HIGHEST quality id (finest, most bits) -> ~0.4 bpp
 
 data:
   # GOT-10k index built by src/data/prepare_got10k.py (round-robin capped to 3GB).
@@ -45,6 +51,7 @@ loss:                     # L = lam_task*L_task + omega*L_distill + beta*bpp + t
   tau: 0.1                # temporal consistency
   delta: 0.0              # L1 edit-magnitude |x_pre-x| (edit sparsity; 0 = off)
   gamma: 0.0              # TV of x_pre (codec-agnostic bit cost; 0 = off, raise to help x264/x265 transfer)
+  mu: 0.0                 # MSE-to-source L_D (0 = off). Paper preset (with codec.kind: virtual): mu=10, beta=0.01, gamma=0
 
 train:
   epochs: 5
