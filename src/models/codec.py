@@ -33,12 +33,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from compressai.zoo import bmshj2018_factorized, bmshj2018_hyperprior
-
-_ZOO = {
-    "bmshj2018-factorized": bmshj2018_factorized,
-    "bmshj2018-hyperprior": bmshj2018_hyperprior,
-}
+def _zoo():
+    """Import CompressAI lazily so the block-DCT (virtual) codec path never needs
+    compressai installed -- only constructing a CompressAICodec triggers it."""
+    from compressai.zoo import bmshj2018_factorized, bmshj2018_hyperprior
+    return {
+        "bmshj2018-factorized": bmshj2018_factorized,
+        "bmshj2018-hyperprior": bmshj2018_hyperprior,
+    }
 
 # CompressAI analysis/synthesis transforms downsample by 2^4 (factorized) or
 # 2^6 (hyperprior). Pad to 64 so any supported model gets valid dimensions.
@@ -73,15 +75,16 @@ class CompressAICodec(nn.Module):
         trainable: bool = False,
     ):
         super().__init__()
-        if model not in _ZOO:
-            raise ValueError(f"unknown codec '{model}', choose from {list(_ZOO)}")
+        zoo = _zoo()
+        if model not in zoo:
+            raise ValueError(f"unknown codec '{model}', choose from {list(zoo)}")
         if isinstance(qualities, int):
             qualities = (qualities,)
         self.model_name = model
         self.qualities = list(qualities)
         # Hold one CompressAI network per quality level.
         self.nets = nn.ModuleDict(
-            {str(q): _ZOO[model](quality=q, pretrained=pretrained) for q in qualities}
+            {str(q): zoo[model](quality=q, pretrained=pretrained) for q in qualities}
         )
         if not trainable:
             for p in self.parameters():
